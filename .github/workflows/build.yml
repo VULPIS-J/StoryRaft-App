@@ -32,6 +32,11 @@ jobs:
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          packages: |
+            platform-tools
+            platforms;android-35
+            build-tools;35.0.0
 
       - name: Extract project ZIP
         run: |
@@ -57,14 +62,16 @@ jobs:
           PROJECT_DIR=$(dirname "$SETTINGS")
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
+          echo "Android project found at: $PROJECT_DIR"
+
       - name: Build debug APK
         run: |
           cd "$PROJECT_DIR"
-          gradle --no-daemon assembleDebug
+          gradle --no-daemon assembleDebug --stacktrace
 
-      - name: Prepare APK
+      - name: Find and prepare APK
         run: |
-          APK=$(find "$PROJECT_DIR/app/build/outputs/apk/debug" -name '*.apk' -type f | head -n 1)
+          APK=$(find "$PROJECT_DIR" -path '*/build/outputs/apk/debug/*.apk' -type f | head -n 1)
 
           if [ -z "$APK" ]; then
             echo "ERROR: APK was not generated."
