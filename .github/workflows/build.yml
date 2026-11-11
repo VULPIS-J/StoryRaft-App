@@ -1,0 +1,56 @@
+
+name: Build StoryRaft APK
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '**.zip'
+      - '.github/workflows/build.yml'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Extract project ZIP
+        run: |
+          ZIP=$(find . -maxdepth 1 -name '*.zip' | head -n 1)
+          if [ -z "$ZIP" ]; then
+            echo "No project ZIP found in repository root."
+            exit 1
+          fi
+          mkdir extracted
+          unzip -q "$ZIP" -d extracted
+          echo "Extracted $ZIP"
+          find extracted -name gradlew -type f
+
+      - name: Locate project
+        run: |
+          GRADLEW=$(find extracted -name gradlew -type f | head -n 1)
+          if [ -z "$GRADLEW" ]; then
+            echo "gradlew not found in ZIP."
+            exit 1
+          fi
+          echo "PROJECT_DIR=$(dirname "$GRADLEW")" >> "$GITHUB_ENV"
+
+      - name: Build debug APK
+        run: |
+          cd "$PROJECT_DIR"
+          chmod +x gradlew
+          ./gradlew assembleDebug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: StoryRaft-debug-apk
+          path: extracted/**/app/build/outputs/apk/debug/*.apk
