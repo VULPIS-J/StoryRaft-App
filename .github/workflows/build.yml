@@ -1,103 +1,65 @@
-name: Build StoryRaft APK
+name: Build StoryRaft Android
 
 on:
   workflow_dispatch:
   push:
-    paths:
-      - '**.zip'
-      - '.github/workflows/build.yml'
+    branches: [main, master]
 
 permissions:
   contents: read
 
 jobs:
   build:
-    runs-on: ubuntu-24.04
-
-    env:
-      ANDROID_HOME: /usr/local/lib/android/sdk
-      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
-
+    runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v5
+      - name: Check out repository
+        uses: actions/checkout@v4
 
-      - name: Set up Java
-        uses: actions/setup-java@v5
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: "17"
 
-      - name: Install Gradle
+      - name: Locate and extract project
+        run: |
+          set -e
+          rm -rf extracted
+          mkdir -p extracted
+          if [ -f StoryRaft-Android.zip ]; then
+            echo "Using StoryRaft-Android.zip"
+            unzip -q StoryRaft-Android.zip -d extracted
+          elif [ -f StoryRaft-Android-GitHub.zip ]; then
+            echo "Using StoryRaft-Android-GitHub.zip"
+            unzip -q StoryRaft-Android-GitHub.zip -d extracted
+          else
+            echo "No project ZIP found at repository root."
+            ls -la
+            exit 1
+          fi
+          if [ -d extracted/StoryRaft-Android ]; then
+            PROJECT_DIR="extracted/StoryRaft-Android"
+          elif [ -f extracted/settings.gradle.kts ]; then
+            PROJECT_DIR="extracted"
+          else
+            echo "Extracted archive does not contain an Android project."
+            exit 1
+          fi
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+          test -f "$PROJECT_DIR/settings.gradle.kts"
+
+      - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: '8.9'
-
-      - name: Install Android SDK packages
-        run: |
-          SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" -name sdkmanager -type f | sort -V | tail -n 1)
-
-          if [ -z "$SDKMANAGER" ]; then
-            echo "ERROR: sdkmanager not found."
-            exit 1
-          fi
-
-          echo "Using SDK manager: $SDKMANAGER"
-
-          yes | "$SDKMANAGER" --sdk_root="$ANDROID_HOME" --licenses || true
-
-          "$SDKMANAGER" --sdk_root="$ANDROID_HOME" --install \
-            "platform-tools" \
-            "platforms;android-35" \
-            "build-tools;35.0.0"
-
-      - name: Extract project ZIP
-        run: |
-          ZIP=$(find . -maxdepth 1 -type f -iname '*.zip' | head -n 1)
-
-          if [ -z "$ZIP" ]; then
-            echo "ERROR: Project ZIP not found."
-            exit 1
-          fi
-
-          mkdir extracted
-          unzip -q "$ZIP" -d extracted
-
-          echo "Extracted: $ZIP"
-
-      - name: Locate Android project
-        run: |
-          SETTINGS=$(find extracted -name settings.gradle.kts -type f | head -n 1)
-
-          if [ -z "$SETTINGS" ]; then
-            echo "ERROR: settings.gradle.kts not found."
-            exit 1
-          fi
-
-          PROJECT_DIR=$(dirname "$SETTINGS")
-          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
-
-          echo "Android project found at: $PROJECT_DIR"
+          gradle-version: "8.9"
 
       - name: Build debug APK
-        run: |
-          cd "$PROJECT_DIR"
-          gradle --no-daemon assembleDebug --stacktrace
-
-      - name: Find and prepare APK
-        run: |
-          APK=$(find "$PROJECT_DIR" -path '*/build/outputs/apk/debug/*.apk' -type f | head -n 1)
-
-          if [ -z "$APK" ]; then
-            echo "ERROR: APK was not generated."
-            exit 1
-          fi
-
-          cp "$APK" "$GITHUB_WORKSPACE/StoryRaft-debug.apk"
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: gradle --no-daemon assembleDebug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: StoryRaft-debug-apk
-          path: StoryRaft-debug.apk
+          path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
